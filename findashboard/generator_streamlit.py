@@ -1,86 +1,22 @@
-import pandas as pd
 import numpy as np
-from pandas_datareader import data
-from pandas.tseries.offsets import BDay
+import yfinance as yf
 from datetime import datetime
 
 from findashboard.constants import column_yieldpct, column_priceclose, column_dividendamt
 from findashboard.constants import URL_NEWS
 
-from findashboard.utils import find_dividend_dates_in_df_prices
-
 import requests
 from bs4 import BeautifulSoup
 
 
-def call_datareader(name_stock, date_start, date_end, data_source):
-    return data.DataReader(
-        name=name_stock,
-        data_source=data_source,
+def call_datareader(name_stock, date_start, date_end):
+    ticker = yf.Ticker(name_stock)
+    return ticker.history(
+        interval="1d",
         start=date_start,
-        end=date_end
+        end=date_end,
+        auto_adjust=False
     )
-
-
-def generate_dividend_yieldpct(
-        name_stock: str,
-        date_start: datetime,
-        date_end: datetime,
-        days_adjust: int,
-):
-    """
-    Generate stock dividend history and dividend yield percent
-    from Yahoo Finance data
-
-    Parameters:
-        name_stock (str): Yahoo Finance stock name of the target company
-        date_start (datetime): left-bound date of the dividend history search
-        date_end (datetime): right-bound date of the dividend history search
-        days_adjust (int): number of days to adjust from dividend recording-date to cum-date
-            Will automatically adjust for working days
-
-    Returns:
-        df_yield (pd.DataFrame): df containing:
-            dividend_amt: dividend given per stock unit
-            closing_price: closing price of the stock at the given date
-            yield_pct: dividend_amt divided by closing_price
-    """
-
-    df_prices = call_datareader(
-        name_stock=name_stock,
-        data_source="yahoo",
-        date_start=date_start,
-        date_end=date_end
-    )
-
-    df_dividends = call_datareader(
-        name_stock=name_stock,
-        data_source="yahoo-dividends",
-        date_start=date_start,
-        date_end=date_end
-    )
-
-    # adjust to last working day
-    df_dividends.index -= BDay(days_adjust)
-
-    df_yield = pd.DataFrame({
-        column_dividendamt: df_dividends[column_dividendamt],
-        column_priceclose: find_dividend_dates_in_df_prices(df_dividends, df_prices)
-    })
-
-    df_yield[column_yieldpct] = df_yield.apply(
-        lambda row: row[column_dividendamt] / row[column_priceclose],
-        axis=1
-    )
-
-    df_yield = df_yield.rename(columns={
-        column_dividendamt: "Dividend Amount",
-        column_priceclose: "Closing Price"
-    })
-
-    df_yield.index = df_yield.index.strftime('%d %B %Y')
-
-    return df_yield
 
 
 def generate_close_returnpctchange(
@@ -105,28 +41,68 @@ def generate_close_returnpctchange(
 
     df_prices = call_datareader(
         name_stock=name_stock,
-        data_source="yahoo",
         date_start=date_start,
         date_end=date_end
     )
-
-    df_close_changepct = df_prices["Close"] \
+    df_close_changepct = df_prices[column_priceclose] \
         .resample(datetime_grouper).last() \
         .pct_change()\
         .reset_index(name="Return")
-
-    df_close_changepct["Year"] = df_close_changepct["Date"].dt.year
-    df_close_changepct["Month"] = df_close_changepct["Date"].dt.month
-
+    df_close_changepct["Year"] = df_close_changepct["Date"].dt.strftime("%Y")
+    df_close_changepct["Month"] = df_close_changepct["Date"].dt.strftime("%m - %B")
     df_close_grp = df_close_changepct.pivot_table(
         values=["Return"],
         index=["Year"],
         columns=["Month"],
         aggfunc=np.mean,
-        margins=False
+        margins=True,
+        margins_name="0 - Average"
     )
+    return df_close_grp.droplevel(level=0, axis=1).sort_index(ascending=False)
 
-    return df_close_grp.droplevel(level=0, axis=1)
+
+def generate_dividend_yieldpct(
+        name_stock: str,
+        date_start: datetime,
+        date_end: datetime=datetime.now().date()
+):
+    """
+    Generate stock dividend history and dividend yield percent
+    from Yahoo Finance data
+
+    Parameters:
+        name_stock (str): Yahoo Finance stock name of the target company
+        date_start (datetime): left-bound date of the dividend history search
+        date_end (datetime): right-bound date of the dividend history search
+
+    Returns:
+        df_yield (pd.DataFrame): df containing:
+            dividend_amt: dividend given per stock unit
+            closing_price: closing price of the stock at the given date
+            yield_pct: dividend_amt divided by closing_price
+    """
+
+    df_yield = call_datareader(
+        name_stock=name_stock,
+        date_start=date_start,
+        date_end=date_end
+    )[[column_priceclose, column_dividendamt]]
+    df_yield = df_yield[df_yield[column_dividendamt] != 0].copy()
+
+    try:
+        df_yield[column_yieldpct] = df_yield.apply(
+            lambda row: row[column_dividendamt] / row[column_priceclose],
+            axis=1
+        )
+        df_yield = df_yield.rename(columns={
+            column_dividendamt: "Dividend Amount",
+            column_priceclose: "Closing Price"
+        })
+        df_yield.index = df_yield.index.date
+        df_yield.index.name = "Date"
+        return df_yield.sort_index(ascending=False)
+    except:
+        return df_yield
 
 
 def generate_dict_news(
