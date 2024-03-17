@@ -26,6 +26,8 @@ COLUMN_PREVIOUS = "previous"
 COLUMN_PROCESS_TOP = "process_top"
 COLUMN_PROCESS_BOTTOM = "process_bottom"
 
+COLUMN_STOCK_NAME = "Stock Name"
+
 VALUE_HIT = 1
 VALUE_RECOVER = -1
 VALUE_NEUTRAL = 0

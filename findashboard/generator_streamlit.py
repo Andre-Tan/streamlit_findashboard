@@ -9,21 +9,32 @@ import requests
 from bs4 import BeautifulSoup
 
 
-def call_datareader(name_stock, date_start, date_end):
-    ticker = yf.Ticker(name_stock)
+# TODO: Refactor DF out of other functions
+
+def call_datareader(
+    name_stock: str,
+    date_start: datetime,
+    date_end: datetime,
+    yf_auto_adjust: bool
+):
+    if len(name_stock.split(" ")) == 1:
+        ticker = yf.Ticker(name_stock)
+    else:
+        ticker = yf.Tickers(name_stock)
     return ticker.history(
         interval="1d",
         start=date_start,
         end=date_end,
-        auto_adjust=False
+        auto_adjust=yf_auto_adjust
     )
 
 
 def generate_close_returnpctchange(
-        name_stock: str,
-        date_start: datetime,
-        date_end: datetime,
-        datetime_grouper: str = "M"
+    name_stock: str,
+    date_start: datetime,
+    date_end: datetime,
+    yf_auto_adjust: bool=False,
+    datetime_grouper: str = "M"
 ):
     """
     Generate stock return in a matrix divided by month and year
@@ -38,11 +49,11 @@ def generate_close_returnpctchange(
     Returns:
         df_close_grp (pd.DataFrame): df containing monthly returns indexed by year and month
     """
-
     df_prices = call_datareader(
         name_stock=name_stock,
         date_start=date_start,
-        date_end=date_end
+        date_end=date_end,
+        yf_auto_adjust=yf_auto_adjust
     )
     df_close_changepct = df_prices[column_priceclose] \
         .resample(datetime_grouper).last() \
@@ -62,9 +73,10 @@ def generate_close_returnpctchange(
 
 
 def generate_dividend_yieldpct(
-        name_stock: str,
-        date_start: datetime,
-        date_end: datetime=datetime.now().date()
+    name_stock: str,
+    date_start: datetime,
+    date_end: datetime=datetime.now().date(),
+    yf_auto_adjust: bool=False
 ):
     """
     Generate stock dividend history and dividend yield percent
@@ -85,7 +97,8 @@ def generate_dividend_yieldpct(
     df_yield = call_datareader(
         name_stock=name_stock,
         date_start=date_start,
-        date_end=date_end
+        date_end=date_end,
+        yf_auto_adjust=yf_auto_adjust
     )[[column_priceclose, column_dividendamt]]
     df_yield = df_yield[df_yield[column_dividendamt] != 0].copy()
 
@@ -106,8 +119,8 @@ def generate_dividend_yieldpct(
 
 
 def generate_dict_news(
-        query:str,
-        limit: int=5
+    query: str,
+    limit: int=5
 ):
     datas = requests.get(URL_NEWS.format(query))
     soup = BeautifulSoup(datas.text, 'html.parser')
