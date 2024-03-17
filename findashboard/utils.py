@@ -1,21 +1,37 @@
-import numpy as np
-import pandas as pd
-from findashboard.constants import column_priceclose
+
+from findashboard.constants import VALUE_HIT, VALUE_RECOVER, VALUE_NEUTRAL
+from findashboard.constants import FORMAT_CURRENCY
 
 
-def find_dividend_dates_in_df_prices(df_dividends_, df_prices_):
+def process_threshold_top(column_now, column_previous, value_threshold):
+    hit_now = column_now >= value_threshold
+    hit_previous = column_previous >= value_threshold
 
-    def backtrack_from_lastdate(date_, length_backtrack=10):
-        for i in np.arange(length_backtrack):
-            date_backtrack = date_ - pd.to_timedelta(i, unit='d')
-            try:
-                return df_prices_.loc[date_backtrack, column_priceclose]
-            except:
-                continue
+    if not hit_previous and hit_now:
+        return VALUE_HIT
+    elif hit_previous and not hit_now:
+        return VALUE_RECOVER
+    else:
+        return VALUE_NEUTRAL
 
-    list_priceclose = []
-    for date in df_dividends_.index:
-        priceclose = backtrack_from_lastdate(date)
-        list_priceclose.append(priceclose)
 
-    return list_priceclose
+def process_threshold_bottom(column_now, column_previous, value_threshold):
+    hit_now = column_now <= value_threshold
+    hit_previous = column_previous <= value_threshold
+
+    if not hit_previous and hit_now:
+        return VALUE_HIT
+    elif hit_previous and not hit_now:
+        return VALUE_RECOVER
+    else:
+        return VALUE_NEUTRAL
+
+
+def format_currency(x):
+
+    try:
+        if x < 0:
+            return ("("+FORMAT_CURRENCY+")").format(abs(x))
+        return FORMAT_CURRENCY.format(x)
+    except Exception as e:
+        return x
