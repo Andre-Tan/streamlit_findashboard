@@ -166,7 +166,7 @@ def cron_run_indicators(
         name_stock=name_stock,
         date_start=date_start,
         date_end=date_end,
-        yf_auto_adjust=False
+        yf_auto_adjust=yf_auto_adjust
     )
 
     df_stock.ta.rsi(length=rsi_length, append=True)
