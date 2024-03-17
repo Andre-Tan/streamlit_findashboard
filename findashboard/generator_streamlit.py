@@ -1,16 +1,20 @@
 import numpy as np
 import yfinance as yf
-from datetime import datetime
-
-from findashboard.constants import column_yieldpct, column_priceclose, column_dividendamt
-from findashboard.constants import URL_NEWS
-
+import pandas_ta as ta
+from datetime import datetime, timedelta
+import pytz
 import requests
 from bs4 import BeautifulSoup
 
+from findashboard.constants import column_yieldpct, column_priceclose, column_dividendamt
+from findashboard.constants import URL_NEWS
+from findashboard.constants import rsi_length, bb_length, bb_std, bb_offset
+from findashboard.constants import COLUMN_RSI, COLUMN_BBANDS_PERC, COLUMN_CLOSE, COLUMN_PREVIOUS, COLUMN_PROCESS_TOP, COLUMN_PROCESS_BOTTOM
+from findashboard.constants import VALUE_THRESHOLD_BOTTOM_BBANDS_PERC, VALUE_THRESHOLD_BOTTOM_RSI, VALUE_THRESHOLD_TOP_BBANDS_PERC, VALUE_THRESHOLD_TOP_RSI
+from findashboard.utils import process_threshold_bottom, process_threshold_top
+
 
 # TODO: Refactor DF out of other functions
-
 def call_datareader(
     name_stock: str,
     date_start: datetime,
@@ -136,3 +140,75 @@ def generate_dict_news(
 
     return dict_news
 
+
+def generate_annual_logreturn(
+    list_name_stock: str,
+    date_start: datetime,
+    date_end: datetime=datetime.now().date(),
+    yf_auto_adjust: bool=False
+):
+    df = call_datareader(
+        name_stock=list_name_stock,
+        date_start=date_start,
+        date_end=date_end,
+        yf_auto_adjust=yf_auto_adjust
+    )
+
+
+def cron_run_indicators(
+        name_stock: str,
+        yf_auto_adjust: bool=False
+):
+    date_end = datetime.now(pytz.utc).date() - timedelta(days=1)
+    date_start = date_end - timedelta(weeks=8)
+
+    df_stock = call_datareader(
+        name_stock=name_stock,
+        date_start=date_start,
+        date_end=date_end,
+        yf_auto_adjust=False
+    )
+
+    df_stock.ta.rsi(length=rsi_length, append=True)
+    df_stock.ta.bbands(length=bb_length, std=bb_std, offset=bb_offset, append=True)
+
+    X = df_stock[[COLUMN_CLOSE, COLUMN_RSI, COLUMN_BBANDS_PERC]].copy()
+    X[f"{COLUMN_RSI}_{COLUMN_PREVIOUS}"] = X[COLUMN_RSI].shift(1)
+    X[f"{COLUMN_BBANDS_PERC}_{COLUMN_PREVIOUS}"] = X[COLUMN_BBANDS_PERC].shift(1)
+
+    X[f"{COLUMN_RSI}_{COLUMN_PROCESS_TOP}"] = X.apply(
+        lambda row:
+            process_threshold_top(
+              column_now=row[COLUMN_RSI],
+              column_previous=row[f"{COLUMN_RSI}_{COLUMN_PREVIOUS}"],
+              value_threshold=VALUE_THRESHOLD_TOP_RSI
+            ), axis=1
+        )
+    X[f"{COLUMN_RSI}_{COLUMN_PROCESS_BOTTOM}"] = X.apply(
+        lambda row:
+            process_threshold_bottom(
+             column_now=row[COLUMN_RSI],
+             column_previous=row[f"{COLUMN_RSI}_{COLUMN_PREVIOUS}"],
+             value_threshold=VALUE_THRESHOLD_BOTTOM_RSI
+            ), axis=1
+        )
+
+    X[f"{COLUMN_BBANDS_PERC}_{COLUMN_PROCESS_TOP}"] = X.apply(
+        lambda row:
+            process_threshold_top(
+                column_now=row[COLUMN_BBANDS_PERC],
+                column_previous=row[
+                f"{COLUMN_BBANDS_PERC}_{COLUMN_PREVIOUS}"],
+                value_threshold=VALUE_THRESHOLD_TOP_BBANDS_PERC
+            ), axis=1
+        )
+    X[f"{COLUMN_BBANDS_PERC}_{COLUMN_PROCESS_BOTTOM}"] = X.apply(
+        lambda row:
+            process_threshold_bottom(
+                column_now=row[COLUMN_BBANDS_PERC],
+                column_previous=row[
+                 f"{COLUMN_BBANDS_PERC}_{COLUMN_PREVIOUS}"],
+                value_threshold=VALUE_THRESHOLD_BOTTOM_BBANDS_PERC
+            ), axis=1
+        )
+    return X.tail(1)
